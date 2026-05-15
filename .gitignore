@@ -32,6 +32,7 @@ MANIFEST
 
 # Virtual environments
 venv/
+venv-linux/
 env/
 ENV/
 .venv/
