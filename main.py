@@ -9,6 +9,7 @@ import streamlit as st
 from dotenv import load_dotenv
 import plotly.express as px
 import plotly.graph_objects as go
+from security import check_password
 
 
 # ────────────────────────────── env & reddit init ──────────────────────────────
@@ -505,6 +506,9 @@ def main() -> None:
     
     apply_custom_css()
     
+    if not check_password():
+        st.stop()
+        
     # Main header with custom logo inline
     st.markdown(
         '''

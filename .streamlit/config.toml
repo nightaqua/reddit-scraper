@@ -1,6 +1,9 @@
 [global]
 developmentMode = false
 
+[client]
+toolbarMode = "minimal"
+
 [server]
 runOnSave = false
 port = 8501
