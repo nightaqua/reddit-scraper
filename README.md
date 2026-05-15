@@ -114,6 +114,24 @@ The app includes optimized Streamlit configuration in `.streamlit/config.toml`:
 - **Performance**: Optimized caching and data handling
 - **Security**: XSRF protection and secure headers
 
+### 🔒 Password Protection (Optional)
+
+The app supports an optional password gate to prevent unauthorized use of your Reddit API quota on public deployments.
+
+**How to enable:** add `APP_PASSWORD` to your Streamlit secrets (Settings → Secrets in the Streamlit Cloud dashboard):
+
+```toml
+APP_PASSWORD = "your_strong_password_here"
+```
+
+If the variable is absent, the app runs without any lock screen — no change in behaviour for local or open deployments.
+
+**Protections included:**
+
+- After **3 failed attempts** (globally, across all browser sessions): a math CAPTCHA is required
+- After **5 failed attempts**: a **60-second lockout** is enforced for all sessions simultaneously — opening a new tab does not reset the counter
+- Password comparison uses constant-time `hmac.compare_digest()` to prevent timing attacks
+
 ### Environment Variables
 
 | Variable | Description | Example |
@@ -121,6 +139,7 @@ The app includes optimized Streamlit configuration in `.streamlit/config.toml`:
 | `REDDIT_CLIENT_ID` | Reddit API client ID | `abcd1234efgh5678` |
 | `REDDIT_CLIENT_SECRET` | Reddit API client secret | `your_secret_key_here` |
 | `REDDIT_USER_AGENT` | User agent string | `RedditScraper/1.0 by /u/username` |
+| `APP_PASSWORD` | Optional password gate | `your_strong_password_here` |
 
 ## 📊 Data Export
 
