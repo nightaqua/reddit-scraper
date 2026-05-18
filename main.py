@@ -771,7 +771,7 @@ def main() -> None:
                 with col1:
                     st.download_button(
                         "📥 Download Full CSV",
-                        _df.to_csv(index=False).encode(),
+                        _df.to_csv(index=False).encode('utf-8-sig'),
                         f"{_name}_posts_full.csv",
                         "text/csv",
                         use_container_width=True
@@ -780,7 +780,7 @@ def main() -> None:
                     if selected_columns:
                         st.download_button(
                             "📥 Download Selected CSV",
-                            display_df.to_csv(index=False).encode(),
+                            display_df.to_csv(index=False).encode('utf-8-sig'),
                             f"{_name}_posts_selected.csv",
                             "text/csv",
                             use_container_width=True
@@ -930,7 +930,7 @@ def main() -> None:
             with col1:
                 st.download_button(
                     "📄 Post CSV",
-                    post_df.to_csv(index=False).encode(),
+                    post_df.to_csv(index=False).encode('utf-8-sig'),
                     "post_details.csv",
                     "text/csv",
                     use_container_width=True
@@ -939,7 +939,7 @@ def main() -> None:
                 if not cmt_df.empty:
                     st.download_button(
                         "💬 Comments CSV",
-                        filtered_cmt_df.to_csv(index=False).encode(),
+                        filtered_cmt_df.to_csv(index=False).encode('utf-8-sig'),
                         "comments.csv",
                         "text/csv",
                         use_container_width=True
