@@ -605,7 +605,7 @@ def main() -> None:
                 include_spoilers = st.checkbox("Include Spoilers", value=True)
             with col3:
                 min_awards = st.number_input("Min Awards", value=0, help="Minimum award count")
-                oc_only = st.checkbox("Original Content Only", value=False)
+                oc_only = st.checkbox("Original Content Only", value=False, help="Only show posts explicitly tagged OC by their author. Rare on most subreddits.")
         
         # Category filters (like GummySearch)
         with st.expander("🏷️ Category Filters (GummySearch Style)"):
@@ -644,6 +644,8 @@ def main() -> None:
                 )
 
             if not df.empty:
+                raw_count = len(df)
+
                 # Apply content filters
                 if min_score > 0:
                     df = df[df['Score'] >= min_score]
@@ -664,17 +666,21 @@ def main() -> None:
                 if min_confidence > 0:
                     df = df[df['Category Confidence'] >= min_confidence]
 
-                st.session_state.sub_results = {'df': df, 'name': sub_name}
+                st.session_state.sub_results = {'df': df, 'name': sub_name, 'raw_count': raw_count}
             else:
-                st.session_state.sub_results = {'df': pd.DataFrame(), 'name': sub_name}
+                st.session_state.sub_results = {'df': pd.DataFrame(), 'name': sub_name, 'raw_count': 0}
 
         # Render results from session state so widget interactions don't clear them
         if st.session_state.sub_results is not None:
             _df = st.session_state.sub_results['df']
             _name = st.session_state.sub_results['name']
 
+            raw_count = st.session_state.sub_results.get('raw_count', len(_df))
+
             if not _df.empty:
-                st.success(f"✅ Successfully fetched {len(_df)} posts from r/{_name}")
+                filtered = raw_count - len(_df)
+                suffix = f" ({filtered} removed by filters)" if filtered else ""
+                st.success(f"✅ Successfully fetched {len(_df)} posts from r/{_name}{suffix}")
 
                 # Stats dashboard
                 create_stats_dashboard(_df)
@@ -739,7 +745,7 @@ def main() -> None:
                         color = get_category_color(val)
                         return f"background-color: {color}20; color: {color}; font-weight: bold;"
 
-                    styled_df = styled_df.style.applymap(style_category, subset=['Category'])
+                    styled_df = styled_df.style.map(style_category, subset=['Category'])
                     st.dataframe(styled_df, use_container_width=True, height=400)
                 else:
                     st.dataframe(display_df, use_container_width=True, height=400)
@@ -772,7 +778,14 @@ def main() -> None:
                         use_container_width=True
                     )
             else:
-                st.error("❌ No posts found. Please check the subreddit name and try again.")
+                if raw_count > 0:
+                    st.warning(
+                        f"⚠️ Scraped {raw_count} posts from r/{_name} but all were removed by your filters. "
+                        "Note: NSFW, Spoiler, and Original Content flags are set explicitly by Reddit users — "
+                        "most posts on typical subreddits have none of these set."
+                    )
+                else:
+                    st.error("❌ No posts found. Please check the subreddit name and try again.")
 
     # ── Single-thread mode ─────────────────────────────────────────────────────
     else:
