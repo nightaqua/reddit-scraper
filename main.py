@@ -168,13 +168,14 @@ def get_subreddit_posts(
     filter_type: str = "All",
     start: date | None = None,
     end:   date | None = None,
+    sort_type: str = "New",
 ) -> pd.DataFrame:
     """
-    Scrape **ALL** posts that fall inside the requested window.
-    • “All”, “Last Week”, “Last Month”, “Last Year” use rolling windows  
-    • “Date Range” honours the explicit `start` → `end` span  
-    Note: Reddit’s API caps results at ~1 000 posts per listing; for huge
-    subs you’ll hit that limit unless you integrate Pushshift.
+    Scrape posts that fall inside the requested window using the chosen sort.
+    • "All", "Last Week", "Last Month", "Last Year" use rolling windows
+    • "Date Range" honours the explicit `start` → `end` span
+    • Hot/Rising are not chronological so date filtering uses continue, not break.
+    Note: Reddit's API caps results at ~1 000 posts per listing.
     """
     try:
         sub   = _reddit.subreddit(name)
@@ -191,12 +192,26 @@ def get_subreddit_posts(
             start_ts = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc).timestamp()
             end_ts   = datetime.combine(end,   datetime.max.time(), tzinfo=timezone.utc).timestamp()
 
+        top_time_map = {"Last Week": "week", "Last Month": "month", "Last Year": "year"}
+        if sort_type == "Hot":
+            listing = sub.hot(limit=None)
+        elif sort_type == "Top":
+            listing = sub.top(time_filter=top_time_map.get(filter_type, "all"), limit=None)
+        elif sort_type == "Rising":
+            listing = sub.rising(limit=None)
+        else:
+            listing = sub.new(limit=None)
+
+        chronological = sort_type == "New"
+
         rows: list[dict] = []
-        for post in sub.new(limit=None):            # newest → oldest
+        for post in listing:
             if post.created_utc > end_ts:
                 continue
-            if post.created_utc < start_ts:         # we’re past window → stop
-                break
+            if post.created_utc < start_ts:
+                if chronological:
+                    break          # new listing is oldest-last, safe to stop early
+                continue           # hot/rising are unordered, must keep scanning
 
             # Classify the post content
             category, confidence = classify_post_content(post.title, post.selftext or "")
@@ -540,9 +555,6 @@ def main() -> None:
         # Advanced options
         with st.expander("🔧 Advanced Options"):
             show_charts = st.checkbox("Show Analytics Charts", value=True)
-            auto_refresh = st.checkbox("Auto-refresh Data", value=False)
-            if auto_refresh:
-                refresh_interval = st.slider("Refresh Interval (minutes)", 1, 60, 5)
 
     # ── Subreddit mode ─────────────────────────────────────────────────────────
     if mode == "Subreddit Posts":
@@ -641,6 +653,7 @@ def main() -> None:
                     reddit, sub_name,
                     filter_type=filter_opt,
                     start=start_d, end=end_d,
+                    sort_type=sort_option,
                 )
 
             if not df.empty:
@@ -665,6 +678,8 @@ def main() -> None:
                     df = df[df['Category'].isin(selected_categories)]
                 if min_confidence > 0:
                     df = df[df['Category Confidence'] >= min_confidence]
+
+                df = df.head(max_posts)
 
                 st.session_state.sub_results = {'df': df, 'name': sub_name, 'raw_count': raw_count}
             else:
@@ -708,8 +723,9 @@ def main() -> None:
                         st.plotly_chart(fig_score, use_container_width=True)
 
                     with chart_col2:
-                        _df['Date'] = pd.to_datetime(_df['Created UTC']).dt.date
-                        posts_per_day = _df.groupby('Date').size().reset_index(name='Posts')
+                        day_counts = pd.to_datetime(_df['Created UTC']).dt.date.value_counts().sort_index()
+                        posts_per_day = day_counts.reset_index()
+                        posts_per_day.columns = ['Date', 'Posts']
                         fig_time = px.line(
                             posts_per_day, x='Date', y='Posts',
                             title="Posts Over Time",
