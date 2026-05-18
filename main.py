@@ -177,121 +177,108 @@ def get_subreddit_posts(
     • Hot/Rising are not chronological so date filtering uses continue, not break.
     Note: Reddit's API caps results at ~1 000 posts per listing.
     """
-    try:
-        sub   = _reddit.subreddit(name)
-        now   = datetime.now(timezone.utc)
-        start_ts, end_ts = 0, now.timestamp()
+    sub   = _reddit.subreddit(name)
+    now   = datetime.now(timezone.utc)
+    start_ts, end_ts = 0, now.timestamp()
 
-        if filter_type == "Last Week":
-            start_ts = (now - timedelta(days=7)).timestamp()
-        elif filter_type == "Last Month":
-            start_ts = (now - timedelta(days=30)).timestamp()
-        elif filter_type == "Last Year":
-            start_ts = (now - timedelta(days=365)).timestamp()
-        elif filter_type == "Date Range" and start and end:
-            start_ts = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc).timestamp()
-            end_ts   = datetime.combine(end,   datetime.max.time(), tzinfo=timezone.utc).timestamp()
+    if filter_type == "Last Week":
+        start_ts = (now - timedelta(days=7)).timestamp()
+    elif filter_type == "Last Month":
+        start_ts = (now - timedelta(days=30)).timestamp()
+    elif filter_type == "Last Year":
+        start_ts = (now - timedelta(days=365)).timestamp()
+    elif filter_type == "Date Range" and start and end:
+        start_ts = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc).timestamp()
+        end_ts   = datetime.combine(end,   datetime.max.time(), tzinfo=timezone.utc).timestamp()
 
-        top_time_map = {"Last Week": "week", "Last Month": "month", "Last Year": "year"}
-        if sort_type == "Hot":
-            listing = sub.hot(limit=None)
-        elif sort_type == "Top":
-            listing = sub.top(time_filter=top_time_map.get(filter_type, "all"), limit=None)
-        elif sort_type == "Rising":
-            listing = sub.rising(limit=None)
-        else:
-            listing = sub.new(limit=None)
+    top_time_map = {"Last Week": "week", "Last Month": "month", "Last Year": "year"}
+    if sort_type == "Hot":
+        listing = sub.hot(limit=None)
+    elif sort_type == "Top":
+        listing = sub.top(time_filter=top_time_map.get(filter_type, "all"), limit=None)
+    elif sort_type == "Rising":
+        listing = sub.rising(limit=None)
+    else:
+        listing = sub.new(limit=None)
 
-        chronological = sort_type == "New"
+    chronological = sort_type == "New"
 
-        rows: list[dict] = []
-        for post in listing:
-            if post.created_utc > end_ts:
-                continue
-            if post.created_utc < start_ts:
-                if chronological:
-                    break          # new listing is oldest-last, safe to stop early
-                continue           # hot/rising are unordered, must keep scanning
+    rows: list[dict] = []
+    for post in listing:
+        if post.created_utc > end_ts:
+            continue
+        if post.created_utc < start_ts:
+            if chronological:
+                break          # new listing is oldest-last, safe to stop early
+            continue           # hot/rising are unordered, must keep scanning
 
-            # Classify the post content
-            category, confidence = classify_post_content(post.title, post.selftext or "")
-            
-            rows.append({
-                "ID":                  post.id,
-                "Title":               post.title,
-                "Post Text":           post.selftext,
-                "Subreddit":           post.subreddit.display_name,
-                "Author":              str(post.author),
-                "Created UTC":         datetime.fromtimestamp(post.created_utc, tz=timezone.utc),
-                "Score":               post.score,
-                "Up-vote Ratio":       post.upvote_ratio,
-                "Total Comments":      post.num_comments,
-                "Total Awards":        post.total_awards_received,
-                "Flair":               post.link_flair_text,
-                "Is Original Content": post.is_original_content,
-                "Over 18":             post.over_18,
-                "Spoiler":             post.spoiler,
-                "Num Cross-posts":     post.num_crossposts,
-                "Permalink":           f"https://www.reddit.com{post.permalink}",
-                "Post URL":            post.url,
-                "Category":            category,
-                "Category Confidence": confidence,
-            })
-        return pd.DataFrame(rows)
+        category, confidence = classify_post_content(post.title, post.selftext or "")
 
-    except Exception as exc:
-        st.error(f"Error fetching subreddit posts: {exc}")
-        return pd.DataFrame()
+        rows.append({
+            "ID":                  post.id,
+            "Title":               post.title,
+            "Post Text":           post.selftext,
+            "Subreddit":           post.subreddit.display_name,
+            "Author":              str(post.author),
+            "Created UTC":         datetime.fromtimestamp(post.created_utc, tz=timezone.utc),
+            "Score":               post.score,
+            "Up-vote Ratio":       post.upvote_ratio,
+            "Total Comments":      post.num_comments,
+            "Total Awards":        post.total_awards_received,
+            "Flair":               post.link_flair_text,
+            "Is Original Content": post.is_original_content,
+            "Over 18":             post.over_18,
+            "Spoiler":             post.spoiler,
+            "Num Cross-posts":     post.num_crossposts,
+            "Permalink":           f"https://www.reddit.com{post.permalink}",
+            "Post URL":            post.url,
+            "Category":            category,
+            "Category Confidence": confidence,
+        })
+    return pd.DataFrame(rows)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_post_by_url(_reddit: praw.Reddit, url: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Return a DataFrame for the submission + its **entire** comment tree."""
-    try:
-        s = _reddit.submission(url=url)
-        
-        # Classify the post content
-        category, confidence = classify_post_content(s.title, s.selftext or "")
-        
-        post_df = pd.DataFrame([{
-            "ID":            s.id,
-            "Title":         s.title,
-            "Post Text":     s.selftext,
-            "Subreddit":     s.subreddit.display_name,
-            "Author":        str(s.author),
-            "Created UTC":   datetime.fromtimestamp(s.created_utc, tz=timezone.utc),
-            "Score":         s.score,
-            "Up-vote Ratio": s.upvote_ratio,
-            "Total Comments": s.num_comments,
-            "Total Awards":   s.total_awards_received,
-            "Flair":          s.link_flair_text,
-            "Is Original Content": s.is_original_content,
-            "Over 18":            s.over_18,
-            "Spoiler":            s.spoiler,
-            "Num Cross-posts":    s.num_crossposts,
-            "Permalink":          f"https://www.reddit.com{s.permalink}",
-            "Post URL":           s.url,
-            "Category":           category,
-            "Category Confidence": confidence,
-        }])
+    s = _reddit.submission(url=url)
+    category, confidence = classify_post_content(s.title, s.selftext or "")
 
-        s.comments.replace_more(limit=None)
-        comments = [{
-            "Comment ID":   c.id,
-            "Parent ID":    c.parent_id,
-            "Comment Text": c.body,
-            "Author":       str(c.author),
-            "Score":        c.score,
-            "Created UTC":  datetime.fromtimestamp(c.created_utc, tz=timezone.utc),
-            "Permalink":    f"https://www.reddit.com{c.permalink}",
-            "Is Submitter": c.is_submitter,
-        } for c in s.comments.list()]
+    post_df = pd.DataFrame([{
+        "ID":                  s.id,
+        "Title":               s.title,
+        "Post Text":           s.selftext,
+        "Subreddit":           s.subreddit.display_name,
+        "Author":              str(s.author),
+        "Created UTC":         datetime.fromtimestamp(s.created_utc, tz=timezone.utc),
+        "Score":               s.score,
+        "Up-vote Ratio":       s.upvote_ratio,
+        "Total Comments":      s.num_comments,
+        "Total Awards":        s.total_awards_received,
+        "Flair":               s.link_flair_text,
+        "Is Original Content": s.is_original_content,
+        "Over 18":             s.over_18,
+        "Spoiler":             s.spoiler,
+        "Num Cross-posts":     s.num_crossposts,
+        "Permalink":           f"https://www.reddit.com{s.permalink}",
+        "Post URL":            s.url,
+        "Category":            category,
+        "Category Confidence": confidence,
+    }])
 
-        return post_df, pd.DataFrame(comments)
+    s.comments.replace_more(limit=None)
+    comments = [{
+        "Comment ID":   c.id,
+        "Parent ID":    c.parent_id,
+        "Comment Text": c.body,
+        "Author":       str(c.author),
+        "Score":        c.score,
+        "Created UTC":  datetime.fromtimestamp(c.created_utc, tz=timezone.utc),
+        "Permalink":    f"https://www.reddit.com{c.permalink}",
+        "Is Submitter": c.is_submitter,
+    } for c in s.comments.list()]
 
-    except Exception as exc:
-        st.error(f"Error fetching post: {exc}")
-        return pd.DataFrame(), pd.DataFrame()
+    return post_df, pd.DataFrame(comments)
 
 
 # ──────────────────────────────── Streamlit UI ────────────────────────────────
@@ -648,42 +635,49 @@ def main() -> None:
 
         # Action button with better styling
         if st.button("🚀 Start Scraping", use_container_width=True):
-            with st.spinner("🔍 Collecting posts from r/{} ...".format(sub_name)):
-                df = get_subreddit_posts(
-                    reddit, sub_name,
-                    filter_type=filter_opt,
-                    start=start_d, end=end_d,
-                    sort_type=sort_option,
-                )
-
-            if not df.empty:
-                raw_count = len(df)
-
-                # Apply content filters
-                if min_score > 0:
-                    df = df[df['Score'] >= min_score]
-                if min_comments > 0:
-                    df = df[df['Total Comments'] >= min_comments]
-                if min_awards > 0:
-                    df = df[df['Total Awards'] >= min_awards]
-                if not include_nsfw:
-                    df = df[~df['Over 18']]
-                if not include_spoilers:
-                    df = df[~df['Spoiler']]
-                if oc_only:
-                    df = df[df['Is Original Content']]
-
-                # Apply category filters (GummySearch style)
-                if selected_categories:
-                    df = df[df['Category'].isin(selected_categories)]
-                if min_confidence > 0:
-                    df = df[df['Category Confidence'] >= min_confidence]
-
-                df = df.head(max_posts)
-
-                st.session_state.sub_results = {'df': df, 'name': sub_name, 'raw_count': raw_count}
+            if not sub_name.strip():
+                st.warning("⚠️ Please enter a subreddit name.")
             else:
-                st.session_state.sub_results = {'df': pd.DataFrame(), 'name': sub_name, 'raw_count': 0}
+                try:
+                    with st.spinner("🔍 Collecting posts from r/{} ...".format(sub_name)):
+                        df = get_subreddit_posts(
+                            reddit, sub_name,
+                            filter_type=filter_opt,
+                            start=start_d, end=end_d,
+                            sort_type=sort_option,
+                        )
+                except Exception as exc:
+                    st.error(f"❌ Could not fetch r/{sub_name}: {exc}")
+                    st.session_state.sub_results = {'df': pd.DataFrame(), 'name': sub_name, 'raw_count': 0}
+                    df = None
+
+                if df is not None and not df.empty:
+                    raw_count = len(df)
+
+                    # Apply content filters
+                    if min_score > 0:
+                        df = df[df['Score'] >= min_score]
+                    if min_comments > 0:
+                        df = df[df['Total Comments'] >= min_comments]
+                    if min_awards > 0:
+                        df = df[df['Total Awards'] >= min_awards]
+                    if not include_nsfw:
+                        df = df[~df['Over 18']]
+                    if not include_spoilers:
+                        df = df[~df['Spoiler']]
+                    if oc_only:
+                        df = df[df['Is Original Content']]
+
+                    # Apply category filters (GummySearch style)
+                    if selected_categories:
+                        df = df[df['Category'].isin(selected_categories)]
+                    if min_confidence > 0:
+                        df = df[df['Category Confidence'] >= min_confidence]
+
+                    df = df.head(max_posts)
+                    st.session_state.sub_results = {'df': df, 'name': sub_name, 'raw_count': raw_count}
+                elif df is not None:
+                    st.session_state.sub_results = {'df': pd.DataFrame(), 'name': sub_name, 'raw_count': 0}
 
         # Render results from session state so widget interactions don't clear them
         if st.session_state.sub_results is not None:
@@ -829,17 +823,16 @@ def main() -> None:
             st.session_state.url_results = None
 
         if st.button("🚀 Scrape Post & Comments", use_container_width=True):
-            if url:
-                with st.spinner("📥 Fetching submission & comments..."):
-                    post_df, cmt_df = get_post_by_url(reddit, url)
-
-                if not post_df.empty:
-                    st.session_state.url_results = {'post_df': post_df, 'cmt_df': cmt_df}
-                else:
-                    st.session_state.url_results = None
-                    st.error("❌ Failed to fetch post data. Please check the URL and try again.")
-            else:
+            if not url.strip():
                 st.warning("⚠️ Please enter a valid Reddit post URL.")
+            else:
+                try:
+                    with st.spinner("📥 Fetching submission & comments..."):
+                        post_df, cmt_df = get_post_by_url(reddit, url)
+                    st.session_state.url_results = {'post_df': post_df, 'cmt_df': cmt_df}
+                except Exception as exc:
+                    st.error(f"❌ Could not fetch post: {exc}")
+                    st.session_state.url_results = None
 
         # Render results from session state so widget interactions don't clear them
         if st.session_state.url_results is not None:
